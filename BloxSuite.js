@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         Blox Suite
 // @namespace    http://tampermonkey.net/
-// @version      4.3.3
+// @version      1.1.0
 // @description  Roblox extension with many useful features.
 // @author       ythundered
 // @match        https://www.roblox.com/*
 // @icon         https://www.roblox.com/favicon.ico
+// @updateURL    https://raw.githubusercontent.com/ythundered/BloxSuite/main/blox-suite.user.js
+// @downloadURL  https://raw.githubusercontent.com/ythundered/BloxSuite/main/blox-suite.user.js
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
@@ -26,10 +28,9 @@
 (function () {
   'use strict';
 
-  const BLOX_SUITE_VERSION = '4.3.3';
+  const BLOX_SUITE_VERSION = '1.1.0';
 
   const STATS_URL = 'https://bloxsuiteusers.cobfuscated.workers.dev';
-  console.log('[Blox Suite] v' + BLOX_SUITE_VERSION + ' loaded');
 
   const DEFAULTS = {
     enabled: true,
@@ -40,7 +41,6 @@
     greetingEnabled: true,
     valuesEnabled: true,
     hideSerials: false,
-    debugValues: false,
     shareUsage: true,
   };
   const STORE_KEY = 'bloxSuiteSettings';
@@ -489,10 +489,10 @@
   }
 
   function resolveValue(entry, fallbackPrice) {
-    if (entry && entry.value !== null && entry.value !== undefined) return { amount: entry.value, exact: true };
-    if (fallbackPrice !== null && fallbackPrice !== undefined) return { amount: fallbackPrice, exact: false };
-    if (entry && entry.rap !== null && entry.rap !== undefined) return { amount: entry.rap, exact: false };
-    return { amount: null, exact: false };
+    if (entry && entry.value !== null && entry.value !== undefined) return { amount: entry.value };
+    if (fallbackPrice !== null && fallbackPrice !== undefined) return { amount: fallbackPrice };
+    if (entry && entry.rap !== null && entry.rap !== undefined) return { amount: entry.rap };
+    return { amount: null };
   }
 
   function matchFontFrom(sourceEl, targetEl) {
@@ -580,15 +580,10 @@
     return null;
   }
 
-  function renderCardValue(caption, priceBox, amount, exact, rap) {
+  function renderCardValue(caption, priceBox, amount) {
     const line = valueLine('Value', amount, { compact: true });
     matchFontFrom(priceBox.querySelector('.text-robux-tile') || priceBox, line.querySelector('.blox-suite-vtext'));
     priceBox.insertAdjacentElement('afterend', line);
-  }
-
-  function dbg() {
-    if (!store.get('debugValues')) return;
-    console.log.apply(console, ['[Blox Suite]'].concat([].slice.call(arguments)));
   }
 
   function applyItemCardValues() {
@@ -597,22 +592,16 @@
       const nameEl = caption.querySelector('.item-card-name');
       const nm = nameEl ? nameEl.textContent.trim() : '(unnamed)';
       const card = caption.closest('.item-card-container') || caption.parentElement;
-      if (!card) return dbg(nm, 'skip: no card container');
-      if (!card.querySelector('.limited-icon-container')) return dbg(nm, 'skip: not a limited');
+      if (!card) return;
+      if (!card.querySelector('.limited-icon-container')) return;
       const priceBox = caption.querySelector('.item-card-price');
-      if (!priceBox) return dbg(nm, 'skip: no .item-card-price');
+      if (!priceBox) return;
 
       const hasLine = !!caption.querySelector('[data-blox-suite-value="1"]');
 
       if (caption.dataset.bloxSuiteVal !== undefined) {
         if (hasLine) return;
-        dbg(nm, 'rebuilding stripped line from cache');
-        renderCardValue(
-          caption, priceBox,
-          parseInt(caption.dataset.bloxSuiteVal, 10),
-          caption.dataset.bloxSuiteExact === '1',
-          caption.dataset.bloxSuiteRap !== undefined ? parseInt(caption.dataset.bloxSuiteRap, 10) : null
-        );
+        renderCardValue(caption, priceBox, parseInt(caption.dataset.bloxSuiteVal, 10));
         applyTradeTotals();
         return;
       }
@@ -620,31 +609,26 @@
       if (caption.dataset.bloxSuiteCard === '1') return;
       const link = card.querySelector('a[href]');
       const item = itemFromCardLink(link && link.getAttribute('href'));
-      if (!item) return dbg(nm, 'skip: no catalog/bundle link, href =', link && link.getAttribute('href'));
+      if (!item) return;
       caption.dataset.bloxSuiteCard = '1';
 
       getItemValue(item.id, nm).then((entry) => {
         const price = cardPrice(caption);
         const resolved = resolveValue(entry, price);
         const rap = entry && entry.rap !== null ? entry.rap : price;
-        dbg(nm, item.type, item.id, '| rolimons =', entry ? ('rap ' + entry.rap + ' value ' + entry.value + (entry.matchedBy ? ' via ' + entry.matchedBy : '')) : 'NOT IN DATASET',
-            '| page price =', price, '| using =', resolved.amount, resolved.exact ? '(exact)' : '(est)');
         if (resolved.amount === null && rap === null) {
-          dbg(nm, 'FAILED: no value and no price to fall back on');
           delete caption.dataset.bloxSuiteCard;
           return;
         }
         if (rap !== null) caption.dataset.bloxSuiteRap = String(rap);
         if (resolved.amount !== null) {
           caption.dataset.bloxSuiteVal = String(resolved.amount);
-          caption.dataset.bloxSuiteExact = resolved.exact ? '1' : '0';
         }
         if (!caption.querySelector('[data-blox-suite-value="1"]')) {
-          renderCardValue(caption, priceBox, resolved.amount, resolved.exact, rap);
+          renderCardValue(caption, priceBox, resolved.amount);
         }
         applyTradeTotals();
       }).catch((e) => {
-        dbg(nm, 'THREW:', e);
         delete caption.dataset.bloxSuiteCard;
       });
     });
@@ -712,7 +696,7 @@
       if (!box || box.dataset.bloxSuiteTotals === '1') return;
       box.dataset.bloxSuiteTotals = '1';
       box.appendChild(tradeLine('BloxSuite RAP:', formatRobux(t.rap), null));
-      box.appendChild(tradeLine('BloxSuite Value:', formatRobux(t.value), null, true));
+      box.appendChild(tradeLine('BloxSuite Value:', formatRobux(t.value), null));
     });
 
     if (!gave || !received) return;
@@ -722,11 +706,11 @@
     box.dataset.bloxSuiteNet = '1';
     const rapDiff = received.rap - gave.rap;
     const valDiff = received.value - gave.value;
-    box.appendChild(tradeLine('RAP Difference:', signedText(rapDiff), rapDiff, false, pctText(rapDiff, gave.rap)));
-    box.appendChild(tradeLine('Value Difference:', signedText(valDiff), valDiff, true, pctText(valDiff, gave.value)));
+    box.appendChild(tradeLine('RAP Difference:', signedText(rapDiff), rapDiff, pctText(rapDiff, gave.rap)));
+    box.appendChild(tradeLine('Value Difference:', signedText(valDiff), valDiff, pctText(valDiff, gave.value)));
   }
 
-  function tradeLine(label, text, diff, useIcon, pct) {
+  function tradeLine(label, text, diff, pct) {
     const row = document.createElement('div');
     row.className = 'robux-line blox-suite-trade-line';
     row.dataset.bloxSuiteValue = '1';
@@ -752,6 +736,112 @@
     row.appendChild(l);
     row.appendChild(amt);
     return row;
+  }
+
+  function requestItemValue(item) {
+    const link = item.querySelector('.item-name a[href]');
+    const spec = itemFromCardLink(link && link.getAttribute('href'));
+    const nameEl = item.querySelector('.item-name');
+    const nm = nameEl ? (nameEl.getAttribute('title') || nameEl.textContent).trim() : '';
+    const priceEl = item.querySelector('.item-value .text-robux');
+    const price = parsePriceEl(priceEl);
+    return { spec: spec, name: nm, price: price, priceEl: priceEl };
+  }
+
+  function applyTradeRequestItems() {
+    if (!store.get('enabled') || !store.get('valuesEnabled')) return;
+    document.querySelectorAll('.trade-request-item').forEach((item) => {
+      if (item.classList.contains('blank-item') || item.classList.contains('draggable-border')) return;
+      const info = requestItemValue(item);
+      if (!info.spec || !info.priceEl) return;
+
+      const has = !!item.querySelector('[data-blox-suite-value="1"]');
+      if (item.dataset.bloxSuiteVal !== undefined) {
+        if (has) return;
+        const line = valueLine('Value', parseInt(item.dataset.bloxSuiteVal, 10), { compact: true });
+        matchFontFrom(info.priceEl, line.querySelector('.blox-suite-vtext'));
+        info.priceEl.parentElement.insertAdjacentElement('afterend', line);
+        applyTradeRequestTotals();
+        return;
+      }
+      if (item.dataset.bloxSuiteCard === '1') return;
+      item.dataset.bloxSuiteCard = '1';
+
+      getItemValue(info.spec.id, info.name).then((entry) => {
+        const resolved = resolveValue(entry, info.price);
+        const rap = entry && entry.rap !== null ? entry.rap : info.price;
+        if (resolved.amount === null && rap === null) {
+          delete item.dataset.bloxSuiteCard;
+          return;
+        }
+        if (rap !== null) item.dataset.bloxSuiteRap = String(rap);
+        if (resolved.amount !== null) item.dataset.bloxSuiteVal = String(resolved.amount);
+        if (!item.querySelector('[data-blox-suite-value="1"]')) {
+          const line = valueLine('Value', resolved.amount, { compact: true });
+          matchFontFrom(info.priceEl, line.querySelector('.blox-suite-vtext'));
+          info.priceEl.parentElement.insertAdjacentElement('afterend', line);
+        }
+        applyTradeRequestTotals();
+      }).catch(() => { delete item.dataset.bloxSuiteCard; });
+    });
+  }
+
+  function requestOfferTotals(offer) {
+    let rap = 0;
+    let val = 0;
+    let known = 0;
+    let total = 0;
+    offer.querySelectorAll('.trade-request-item').forEach((item) => {
+      if (item.classList.contains('blank-item') || item.classList.contains('draggable-border')) return;
+      if (!item.querySelector('.item-name a[href]')) return;
+      total++;
+      const r = item.dataset.bloxSuiteRap;
+      const v = item.dataset.bloxSuiteVal;
+      if (r === undefined && v === undefined) return;
+      known++;
+      const rapN = r !== undefined ? parseInt(r, 10) : 0;
+      rap += rapN;
+      val += v !== undefined ? parseInt(v, 10) : rapN;
+    });
+    const input = offer.querySelector('input[name="robux"]');
+    const robux = input ? (parseInt((input.value || '').replace(/[^\d]/g, ''), 10) || 0) : 0;
+    return { rap: rap, value: val + robux, complete: total > 0 && known === total };
+  }
+
+  function applyTradeRequestTotals() {
+    if (!store.get('enabled') || !store.get('valuesEnabled')) return;
+    const offers = document.querySelectorAll('.trade-request-window-offer');
+    if (offers.length < 2) return;
+
+    let give = null;
+    let receive = null;
+    const boxes = [];
+    offers.forEach((offer) => {
+      const t = requestOfferTotals(offer);
+      const head = offer.querySelector('h2');
+      const isGive = head && /offer/i.test(head.textContent);
+      if (isGive) give = t; else receive = t;
+
+      const anchor = offer.querySelector('.robux-line:not(.blox-suite-trade-line)');
+      if (!anchor) return;
+      boxes.push({ offer: offer, anchor: anchor, totals: t });
+    });
+
+    boxes.forEach((b) => {
+      b.offer.querySelectorAll('.blox-suite-trade-line').forEach((el) => el.remove());
+      if (!b.totals.complete) return;
+      b.anchor.insertAdjacentElement('afterend', tradeLine('BloxSuite Value:', formatRobux(b.totals.value), null));
+      b.anchor.insertAdjacentElement('afterend', tradeLine('BloxSuite RAP:', formatRobux(b.totals.rap), null));
+    });
+
+    if (!give || !receive || !give.complete || !receive.complete) return;
+    const last = boxes[boxes.length - 1];
+    if (!last) return;
+    const rapDiff = receive.rap - give.rap;
+    const valDiff = receive.value - give.value;
+    const parent = last.anchor.parentElement;
+    parent.appendChild(tradeLine('RAP Difference:', signedText(rapDiff), rapDiff, pctText(rapDiff, give.rap)));
+    parent.appendChild(tradeLine('Value Difference:', signedText(valDiff), valDiff, pctText(valDiff, give.value)));
   }
 
   function statPill(label, href) {
@@ -783,7 +873,7 @@
     if (!row || row.dataset.bloxSuiteStats === '1') return;
     if (!row.querySelector('a[href*="/friends"]')) return;
     row.dataset.bloxSuiteStats = '1';
-    const href = 'https://www.roblox.com/users/' + uid + '/inventory';
+    const href = 'https://www.roblox.com/users/' + uid + '/inventory#!/collectibles';
     const rapPill = statPill('RAP \u2026', href);
     const valPill = statPill('Value \u2026', href);
     row.appendChild(rapPill);
@@ -831,7 +921,6 @@
       delete el.dataset.bloxSuiteCard;
       delete el.dataset.bloxSuiteRap;
       delete el.dataset.bloxSuiteVal;
-      delete el.dataset.bloxSuiteExact;
     });
     document.querySelectorAll('[data-blox-suite-stats="1"]').forEach((el) => delete el.dataset.bloxSuiteStats);
     document.querySelectorAll('[data-blox-suite-totals="1"]').forEach((el) => delete el.dataset.bloxSuiteTotals);
@@ -848,8 +937,38 @@
     });
     if (!candidates.length) return null;
     const offline = candidates.filter((c) => !c.querySelector('[data-testid="presence-icon"]'));
-    if (offline.length) return offline[0];
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    const pool = offline.length ? offline : candidates;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function restoreTile(el) {
+    el.style.display = el.dataset.bloxSuiteDisplay || '';
+    delete el.dataset.bloxSuiteReplaced;
+    delete el.dataset.bloxSuiteDisplay;
+    delete el.dataset.bloxSuiteReplacedBy;
+  }
+
+  function refreshFakePlacement() {
+    if (!store.get('enabled')) return;
+    if (!isOwnFriendsSurface()) return;
+    const list = document.querySelector('.friends-carousel-list-container');
+    if (!list) return;
+
+    document.querySelectorAll('[data-blox-suite-replaced="1"]').forEach((hidden) => {
+      if (!hidden.querySelector('[data-testid="presence-icon"]')) return;
+      const friendId = hidden.dataset.bloxSuiteReplacedBy;
+      restoreTile(hidden);
+      const fake = friendId && list.querySelector('[data-blox-suite-friend="' + friendId + '"]');
+      if (!fake) return;
+      const target = pickTileToReplace(list);
+      if (target) {
+        target.dataset.bloxSuiteReplaced = '1';
+        target.dataset.bloxSuiteReplacedBy = friendId;
+        target.dataset.bloxSuiteDisplay = target.style.display || '';
+        target.style.display = 'none';
+        list.insertBefore(fake, target);
+      }
+    });
   }
 
   function isOwnFriendsSurface() {
@@ -877,6 +996,7 @@
       const target = pickTileToReplace(list);
       if (target) {
         target.dataset.bloxSuiteReplaced = '1';
+        target.dataset.bloxSuiteReplacedBy = id;
         target.dataset.bloxSuiteDisplay = target.style.display || '';
         target.style.display = 'none';
         list.insertBefore(tile, target);
@@ -888,11 +1008,7 @@
 
   function revertFakeFriends() {
     document.querySelectorAll('[data-blox-suite-friend]').forEach((el) => el.remove());
-    document.querySelectorAll('[data-blox-suite-replaced="1"]').forEach((el) => {
-      el.style.display = el.dataset.bloxSuiteDisplay || '';
-      delete el.dataset.bloxSuiteReplaced;
-      delete el.dataset.bloxSuiteDisplay;
-    });
+    document.querySelectorAll('[data-blox-suite-replaced="1"]').forEach(restoreTile);
   }
 
   function applyHomeGreeting() {
@@ -949,64 +1065,20 @@
     });
   }
 
-  function describeResult(url, res) {
-    const host = url.replace(/^https?:\/\//, '').split('/')[0];
-    if (res.reason === 'nogm') return host + ': GM_xmlhttpRequest unavailable';
-    if (res.reason === 'refused') return host + ': refused (' + res.detail + ')';
-    if (res.reason === 'timeout') return host + ': timed out';
-    if (res.reason === 'threw') return host + ': error - ' + res.detail;
-    return host + ': HTTP ' + res.status;
-  }
-
   function gmRequest(url) {
     return gmRequestRaw(url).then((res) => {
-      if (!res.ok) {
-        roliError = describeResult(url, res);
-        console.warn('[Blox Suite] ' + roliError);
-        return null;
-      }
+      if (!res.ok) return null;
       try {
         return JSON.parse(res.body);
       } catch (e) {
-        roliError = describeResult(url, res) + ' but the body was not JSON (Cloudflare challenge?)';
-        console.warn('[Blox Suite] ' + roliError);
         return null;
       }
     });
   }
 
-  function runConnectivityTest() {
-    const targets = [
-      ['https://users.roblox.com/v1/users/1', 'roblox (listed in @connect)'],
-      ['https://api.rolimons.com/items/v1/itemdetails', 'rolimons api (listed in @connect)'],
-      ['https://www.rolimons.com/itemapi/itemdetails', 'rolimons www (listed in @connect)'],
-      ['https://example.com/', 'control (NOT listed - should be refused)'],
-    ];
-    return Promise.all(targets.map((t) => gmRequestRaw(t[0]).then((r) => ({ res: r, url: t[0], note: t[1] }))))
-      .then((rows) => {
-        const lines = rows.map((r) => describeResult(r.url, r.res) + '  <- ' + r.note);
-        const reached = (r) => r.res.reason === 'http';
-        const roblox = reached(rows[0]);
-        const roli = reached(rows[1]) || reached(rows[2]);
-        const controlRefused = !reached(rows[3]);
-        let verdict;
-        if (roli) {
-          verdict = 'VERDICT: rolimons responded. If values still do not show, press Retry.';
-        } else if (!roblox) {
-          verdict = 'VERDICT: nothing got through, so GM_xmlhttpRequest is not working at all.\nThis is expected in Falkon, which has no GM API. Use Firefox with Tampermonkey.';
-        } else if (controlRefused) {
-          verdict = 'VERDICT: @connect is still being enforced against rolimons even though this\nscript now uses "@connect *". Tampermonkey keeps the OLD permission set when a\nscript is edited rather than reinstalled, so the wildcard has not taken effect.\nFix: delete Blox Suite in the Tampermonkey dashboard, install it fresh, and\naccept the prompt. Or set it manually under script Settings > User domain whitelist.';
-        } else {
-          verdict = 'VERDICT: unlisted domains get through but rolimons does not, so something outside\nTampermonkey is blocking it - uBlock Origin, a DNS blocklist (Pi-hole, NextDNS,\nAdGuard Home), or your router/ISP. Open\nhttps://api.rolimons.com/items/v1/itemdetails in a normal tab: if that also fails,\nit is network-level. You can still use Import below.';
-        }
-        return lines.join('\n') + '\n\n' + verdict;
-      });
-  }
-
   const ROLI_CACHE_KEY = 'bloxSuiteRoli';
   const ROLI_TTL = 30 * 60 * 1000;
   let rolimonsStatus = 'idle';
-  let roliError = null;
 
   function readRoliCache() {
     try {
@@ -1046,27 +1118,17 @@
       'https://www.rolimons.com/itemapi/itemdetails',
     ];
 
-    const attempts = [];
     rolimonsPromise = endpoints.reduce(
-      (chain, url) => chain.then((prev) => {
-        if (prev && prev.items) return prev;
-        return gmRequest(url).then((r) => {
-          if (!r) attempts.push(roliError);
-          return r;
-        });
-      }),
+      (chain, url) => chain.then((prev) => (prev && prev.items ? prev : gmRequest(url))),
       Promise.resolve(null)
     ).then((json) => {
       if (!json || !json.items) {
         rolimonsStatus = 'failed';
-        roliError = attempts.join(' | ');
         return null;
       }
       rolimonsStatus = 'live';
-      roliError = null;
       roliNameIndex = null;
       const n = Object.keys(json.items).length;
-      console.log('[Blox Suite] Rolimons loaded, ' + n + ' items.');
       writeRoliCache(json.items);
       return json.items;
     });
@@ -1348,6 +1410,7 @@
     applyItemValue();
     applyItemCardValues();
     applyTradeTotals();
+    applyTradeRequestItems();
     applyProfileStats();
     applyHideSerials();
     if (store.get('enabled') && store.get('verifiedEnabled')) {
@@ -1442,7 +1505,6 @@
         .blox-suite-add-btn:disabled { opacity: 0.5; cursor: default; }
         .blox-suite-hint { font-size: 12px; color: var(--bs-muted, #9b9b9b); margin-bottom: 10px; }
         .blox-suite-hint.error { color: #e02c2c; }
-        .blox-suite-diag { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap; background: var(--bs-panel, rgba(0,0,0,0.04)); border: 1px solid var(--bs-border, rgba(0,0,0,0.1)); border-radius: 8px; padding: 10px; margin-top: 8px; color: var(--bs-text, #393b3d); max-height: 220px; overflow: auto; }
         .blox-suite-friend-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         .blox-suite-friend { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; background: var(--bs-panel, rgba(0,0,0,0.03)); }
         .blox-suite-friend img { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; background: var(--bs-border, #ddd); object-fit: cover; }
@@ -1502,7 +1564,6 @@
     const greetingEnabled = store.get('greetingEnabled');
     const valuesEnabled = store.get('valuesEnabled');
     const hideSerials = store.get('hideSerials');
-    const debugValues = store.get('debugValues');
     const shareUsage = store.get('shareUsage');
     overlay.innerHTML = `
         <div class="blox-suite-modal" role="dialog" aria-label="Suite Settings">
@@ -1584,16 +1645,7 @@
                             </label>
                         </div>
                         <div class="blox-suite-hint" id="blox-suite-roli-status">Checking Rolimons&hellip;</div>
-                        <div style="display:flex;gap:6px;margin-top:8px;">
-                          <button class="blox-suite-add-btn" id="blox-suite-roli-retry" type="button" style="display:none;padding:6px 14px;">Retry</button>
-                          <button class="blox-suite-add-btn" id="blox-suite-roli-diag" type="button" style="display:none;padding:6px 14px;">Diagnose</button>
-                        </div>
-                        <pre class="blox-suite-diag" id="blox-suite-diag-out" style="display:none;"></pre>
-                        <div id="blox-suite-import-wrap" style="display:none;margin-top:10px;">
-                          <div class="blox-suite-hint">Blocked? Open <b>api.rolimons.com/items/v1/itemdetails</b> in a normal tab, copy everything, and paste it here.</div>
-                          <textarea class="blox-suite-input" id="blox-suite-import" rows="3" placeholder='{"success":true,"items":{...}}' style="resize:vertical;font-family:ui-monospace,monospace;font-size:11px;"></textarea>
-                          <button class="blox-suite-add-btn" id="blox-suite-import-btn" type="button" style="margin-top:6px;padding:6px 14px;">Import</button>
-                        </div>
+                        <button class="blox-suite-add-btn" id="blox-suite-roli-retry" type="button" style="display:none;margin-top:8px;padding:6px 14px;">Retry</button>
                     </div>
                     <div class="blox-suite-section">
                         <div class="blox-suite-row">
@@ -1603,20 +1655,6 @@
                             </div>
                             <label class="blox-suite-switch">
                                 <input type="checkbox" id="blox-suite-usage-toggle" ${shareUsage ? 'checked' : ''}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <div class="blox-suite-hint" id="blox-suite-beat-status"></div>
-                        <button class="blox-suite-add-btn" id="blox-suite-beat-test" type="button" style="margin-top:8px;padding:6px 14px;">Send test beat</button>
-                    </div>
-                    <div class="blox-suite-section">
-                        <div class="blox-suite-row">
-                            <div>
-                                <div class="label">Debug Values</div>
-                                <div class="sublabel">Logs why each item shows or hides a value</div>
-                            </div>
-                            <label class="blox-suite-switch">
-                                <input type="checkbox" id="blox-suite-debug-toggle" ${debugValues ? 'checked' : ''}>
                                 <span class="slider"></span>
                             </label>
                         </div>
@@ -1654,123 +1692,29 @@
     return overlay;
   }
 
-  function wireBeatTest(root) {
-    const btn = root.querySelector('#blox-suite-beat-test');
-    const out = root.querySelector('#blox-suite-beat-status');
-    if (!btn || btn.dataset.bound === '1') return;
-    btn.dataset.bound = '1';
-
-    if (!STATS_URL) {
-      out.classList.add('error');
-      out.textContent = 'STATS_URL is empty in the script, so nothing is ever sent.';
-      btn.style.display = 'none';
-      return;
-    }
-
-    btn.addEventListener('click', () => {
-      out.classList.remove('error');
-      out.textContent = 'Sending\u2026';
-      const uid = ownUserId || detectOwnUserId();
-      if (!uid) {
-        out.classList.add('error');
-        out.textContent = 'Could not detect your Roblox user id on this page.';
-        return;
-      }
-      const gm = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest
-        : (typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function' ? GM.xmlHttpRequest : null);
-      if (!gm) {
-        out.classList.add('error');
-        out.textContent = 'GM_xmlhttpRequest unavailable - your userscript manager did not grant it.';
-        return;
-      }
-      gm({
-        method: 'POST',
-        url: STATS_URL.replace(/\/$/, '') + '/beat',
-        headers: { 'Content-Type': 'application/json' },
-        data: JSON.stringify({ id: uid, name: getOwnDisplayName() || 'unknown', version: BLOX_SUITE_VERSION }),
-        timeout: 10000,
-        onload: (r) => {
-          if (r.status === 200) {
-            out.classList.remove('error');
-            out.textContent = 'Sent as ' + (getOwnDisplayName() || uid) + ' - HTTP 200. ' + (r.responseText || '');
-          } else {
-            out.classList.add('error');
-            out.textContent = 'Worker replied HTTP ' + r.status + '. ' + (r.responseText || '');
-          }
-        },
-        onerror: () => {
-          out.classList.add('error');
-          out.textContent = 'Refused before sending - the worker domain is not approved in your userscript manager. Reinstall the script and accept the prompt.';
-        },
-        ontimeout: () => {
-          out.classList.add('error');
-          out.textContent = 'Timed out reaching the worker.';
-        },
-      });
-    });
-  }
-
   function updateRoliStatus(root) {
     const el = root.querySelector('#blox-suite-roli-status');
     const retry = root.querySelector('#blox-suite-roli-retry');
     if (!el) return;
-    el.textContent = 'Checking Rolimons\u2026';
+    el.textContent = 'Checking\u2026';
     el.classList.remove('error');
     if (retry) retry.style.display = 'none';
     getRolimons().then((items) => {
       if (items) {
-        const n = Object.keys(items).length;
         el.classList.remove('error');
-        el.textContent = 'Rolimons connected \u00b7 ' + n.toLocaleString('en-US') + ' items' +
+        el.textContent = Object.keys(items).length.toLocaleString('en-US') + ' items loaded' +
           (rolimonsStatus === 'cached' ? ' (cached)' : '');
         if (retry) retry.style.display = 'none';
       } else {
         el.classList.add('error');
-        el.textContent = 'Rolimons unavailable \u2014 ' + (roliError || 'unknown error');
+        el.textContent = 'Could not reach Rolimons. Values are unavailable right now.';
         if (retry) retry.style.display = 'inline-block';
-        const diag = root.querySelector('#blox-suite-roli-diag');
-        if (diag) diag.style.display = 'inline-block';
-        const imp = root.querySelector('#blox-suite-import-wrap');
-        if (imp) imp.style.display = 'block';
       }
     });
-    const diag = root.querySelector('#blox-suite-roli-diag');
-    const out = root.querySelector('#blox-suite-diag-out');
-    if (diag && diag.dataset.bound !== '1') {
-      diag.dataset.bound = '1';
-      diag.addEventListener('click', () => {
-        out.style.display = 'block';
-        out.textContent = 'Testing\u2026';
-        runConnectivityTest().then((text) => { out.textContent = text; });
-      });
-    }
-    const impBtn = root.querySelector('#blox-suite-import-btn');
-    if (impBtn && impBtn.dataset.bound !== '1') {
-      impBtn.dataset.bound = '1';
-      impBtn.addEventListener('click', () => {
-        const ta = root.querySelector('#blox-suite-import');
-        const el2 = root.querySelector('#blox-suite-roli-status');
-        let parsed = null;
-        try { parsed = JSON.parse(ta.value.trim()); } catch (e) {}
-        if (!parsed || !parsed.items) {
-          el2.classList.add('error');
-          el2.textContent = 'That did not look like Rolimons item data.';
-          return;
-        }
-        writeRoliCache(parsed.items);
-        rolimonsPromise = null;
-        roliError = null;
-        rolimonsStatus = 'idle';
-        ta.value = '';
-        updateRoliStatus(root);
-        runAllPatches();
-      });
-    }
     if (retry && retry.dataset.bound !== '1') {
       retry.dataset.bound = '1';
       retry.addEventListener('click', () => {
         rolimonsPromise = null;
-        roliError = null;
         rolimonsStatus = 'idle';
         try { GM_setValue(ROLI_CACHE_KEY, null); } catch (e) {}
         try { localStorage.removeItem(ROLI_CACHE_KEY); } catch (e) {}
@@ -1942,7 +1886,6 @@
     setSectionEnabledState(modalRoot);
     wireTabs(modalRoot);
     updateRoliStatus(modalRoot);
-    wireBeatTest(modalRoot);
     wireFriendsPage(modalRoot);
     renderFriendList(modalRoot);
     modalRoot.querySelector('#blox-suite-save').addEventListener('click', () => {
@@ -1953,7 +1896,6 @@
       const greetingEnabled = modalRoot.querySelector('#blox-suite-greeting-toggle').checked;
       const valuesEnabled = modalRoot.querySelector('#blox-suite-values-toggle').checked;
       const hideSerials = modalRoot.querySelector('#blox-suite-serials-toggle').checked;
-      const debugValues = modalRoot.querySelector('#blox-suite-debug-toggle').checked;
       const shareUsage = modalRoot.querySelector('#blox-suite-usage-toggle').checked;
       const wasVerifiedOn = store.get('enabled') && store.get('verifiedEnabled');
       const wasRobuxOn = store.get('enabled') && store.get('robuxEnabled');
@@ -1966,7 +1908,6 @@
       store.set('greetingEnabled', greetingEnabled);
       store.set('valuesEnabled', valuesEnabled);
       store.set('hideSerials', hideSerials);
-      store.set('debugValues', debugValues);
       store.set('shareUsage', shareUsage);
       if (!(masterEnabled && valuesEnabled)) revertValueCards();
       if (!(masterEnabled && hideSerials)) revertHideSerials();
@@ -1997,37 +1938,28 @@
   const BEAT_INTERVAL = 2 * 60 * 1000;
 
   function sendBeat(manual) {
-    const say = (msg, extra) => {
-      if (manual || store.get('debugValues')) console.log('[Blox Suite] beat: ' + msg, extra !== undefined ? extra : '');
-    };
-
-    if (!STATS_URL) return say('STATS_URL is empty - set it at the top of the script');
-    if (!store.get('shareUsage')) return say('skipped, Share Usage is off in settings');
+    if (!STATS_URL) return;
+    if (!store.get('shareUsage')) return;
 
     const uid = ownUserId || detectOwnUserId();
-    if (!uid) return say('skipped, could not detect your user id yet');
+    if (!uid) return;
 
     if (!manual) {
       try {
         const last = parseInt(localStorage.getItem(BEAT_KEY) || '0', 10);
-        if (Date.now() - last < BEAT_INTERVAL - 2000) {
-          return say('skipped, another tab beat ' + Math.round((Date.now() - last) / 1000) + 's ago');
-        }
+        if (Date.now() - last < BEAT_INTERVAL - 2000) return;
         localStorage.setItem(BEAT_KEY, String(Date.now()));
       } catch (e) {}
     }
 
     const gm = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest
       : (typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function' ? GM.xmlHttpRequest : null);
-    if (!gm) return say('GM_xmlhttpRequest unavailable - userscript manager did not grant it');
-
-    const url = STATS_URL.replace(/\/$/, '') + '/beat';
-    say('sending to ' + url);
+    if (!gm) return;
 
     try {
       gm({
         method: 'POST',
-        url: url,
+        url: STATS_URL.replace(/\/$/, '') + '/beat',
         headers: { 'Content-Type': 'application/json' },
         data: JSON.stringify({
           id: uid,
@@ -2035,13 +1967,11 @@
           version: BLOX_SUITE_VERSION,
         }),
         timeout: 10000,
-        onload: (r) => say('server replied HTTP ' + r.status, r.responseText),
-        onerror: (e) => say('REFUSED - the worker domain is blocked by your userscript manager', e),
-        ontimeout: () => say('timed out'),
+        onload: () => {},
+        onerror: () => {},
+        ontimeout: () => {},
       });
-    } catch (e) {
-      say('threw', e);
-    }
+    } catch (e) {}
   }
 
   function startHeartbeat() {
@@ -2055,6 +1985,10 @@
     injectStyles();
     applyThemeTokens(true);
     setInterval(() => applyThemeTokens(true), 4000);
+    setInterval(refreshFakePlacement, 3000);
+    document.addEventListener('input', (e) => {
+      if (e.target && e.target.name === 'robux') applyTradeRequestTotals();
+    }, true);
     runAllPatches();
     tryInjectMenuItem();
     startObserver();
