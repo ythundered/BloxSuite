@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blox Suite
 // @namespace    http://tampermonkey.net/
-// @version      4.3.1
+// @version      4.3.2
 // @description  Roblox extension with many useful features.
 // @author       ythundered
 // @match        https://www.roblox.com/*
@@ -26,7 +26,7 @@
 (function () {
   'use strict';
 
-  const BLOX_SUITE_VERSION = '4.3.1';
+  const BLOX_SUITE_VERSION = '4.3.2';
 
   const STATS_URL = 'https://bloxsuiteusers.cobfuscated.workers.dev';
   console.log('[Blox Suite] v' + BLOX_SUITE_VERSION + ' loaded');
