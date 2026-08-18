@@ -41,7 +41,6 @@
     greetingEnabled: true,
     valuesEnabled: true,
     hideSerials: false,
-    shareUsage: true,
   };
   const STORE_KEY = 'bloxSuiteSettings';
 
@@ -1564,7 +1563,6 @@
     const greetingEnabled = store.get('greetingEnabled');
     const valuesEnabled = store.get('valuesEnabled');
     const hideSerials = store.get('hideSerials');
-    const shareUsage = store.get('shareUsage');
     overlay.innerHTML = `
         <div class="blox-suite-modal" role="dialog" aria-label="Suite Settings">
             <div class="blox-suite-header">
@@ -1646,18 +1644,6 @@
                         </div>
                         <div class="blox-suite-hint" id="blox-suite-roli-status">Checking Rolimons&hellip;</div>
                         <button class="blox-suite-add-btn" id="blox-suite-roli-retry" type="button" style="display:none;margin-top:8px;padding:6px 14px;">Retry</button>
-                    </div>
-                    <div class="blox-suite-section">
-                        <div class="blox-suite-row">
-                            <div>
-                                <div class="label">Share Usage</div>
-                                <div class="sublabel">Sends your username to the Blox Suite owner so they can see who&rsquo;s using it</div>
-                            </div>
-                            <label class="blox-suite-switch">
-                                <input type="checkbox" id="blox-suite-usage-toggle" ${shareUsage ? 'checked' : ''}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
                     </div>
                     <div class="blox-suite-section">
                         <div class="blox-suite-row">
@@ -1896,7 +1882,6 @@
       const greetingEnabled = modalRoot.querySelector('#blox-suite-greeting-toggle').checked;
       const valuesEnabled = modalRoot.querySelector('#blox-suite-values-toggle').checked;
       const hideSerials = modalRoot.querySelector('#blox-suite-serials-toggle').checked;
-      const shareUsage = modalRoot.querySelector('#blox-suite-usage-toggle').checked;
       const wasVerifiedOn = store.get('enabled') && store.get('verifiedEnabled');
       const wasRobuxOn = store.get('enabled') && store.get('robuxEnabled');
       const wasGreetingOn = store.get('enabled') && store.get('greetingEnabled');
@@ -1908,7 +1893,6 @@
       store.set('greetingEnabled', greetingEnabled);
       store.set('valuesEnabled', valuesEnabled);
       store.set('hideSerials', hideSerials);
-      store.set('shareUsage', shareUsage);
       if (!(masterEnabled && valuesEnabled)) revertValueCards();
       if (!(masterEnabled && hideSerials)) revertHideSerials();
       const willVerifiedBeOn = masterEnabled && verifiedEnabled;
@@ -1939,7 +1923,6 @@
 
   function sendBeat(manual) {
     if (!STATS_URL) return;
-    if (!store.get('shareUsage')) return;
 
     const uid = ownUserId || detectOwnUserId();
     if (!uid) return;
