@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+SCRIPT="BloxSuite.js"
+CREDS="creds"
+
+red()  { printf '\033[31m%s\033[0m\n' "$1"; }
+grn()  { printf '\033[32m%s\033[0m\n' "$1"; }
+dim()  { printf '\033[2m%s\033[0m\n' "$1"; }
+bold() { printf '\033[1m%s\033[0m\n' "$1"; }
+
+[ -f "$SCRIPT" ] || { red "Can't find $SCRIPT in $(pwd)"; exit 1; }
+
+# ---------- credentials ----------
+if [ ! -f "$CREDS" ]; then
+  red "No '$CREDS' file found."
+  cat <<EOF
+
+Create one next to this script containing:
+
+  GITHUB_USER=ythundered
+  GITHUB_TOKEN=github_pat_xxxxxxxxxxxx
+  REPO=ythundered/BloxSuite
+
+Make the token at https://github.com/settings/tokens
+(Fine-grained token, this repo only, Contents: Read and write)
+
+Then:  chmod 600 $CREDS
+
+EOF
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "./$CREDS"
+: "${GITHUB_USER:?GITHUB_USER missing from $CREDS}"
+: "${GITHUB_TOKEN:?GITHUB_TOKEN missing from $CREDS}"
+: "${REPO:?REPO missing from $CREDS}"
+
+perms=$(stat -c '%a' "$CREDS")
+if [ "$perms" != "600" ]; then
+  dim "Tightening permissions on $CREDS (was $perms)"
+  chmod 600 "$CREDS"
+fi
+
+# ---------- make sure creds is never pushed ----------
+touch .gitignore
+for pat in "$CREDS" "creds" ".env"; do
+  grep -qxF "$pat" .gitignore 2>/dev/null || echo "$pat" >> .gitignore
+done
+
+# ---------- current version ----------
+if command -v node >/dev/null 2>&1; then
+  if ! node -c "$SCRIPT" 2>/dev/null; then
+    red "$SCRIPT has a syntax error. Fix it first - nothing was changed."
+    exit 1
+  fi
+  grn "Syntax OK"
+fi
+
+CURRENT=$(grep -m1 '^// @version' "$SCRIPT" | awk '{print $3}')
+[ -n "$CURRENT" ] || { red "Couldn't read @version from $SCRIPT"; exit 1; }
+
+IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"
+MAJ=${MAJ:-0}; MIN=${MIN:-0}; PAT=${PAT:-0}
+
+echo
+bold "Blox Suite  —  current version $CURRENT"
+echo
+echo "  1) major   $((MAJ+1)).0.0     breaking / big rewrite"
+echo "  2) minor   $MAJ.$((MIN+1)).0     new feature"
+echo "  3) patch   $MAJ.$MIN.$((PAT+1))     bug fix"
+echo "  4) skip    $CURRENT     no version change"
+echo
+read -rp "Which? [1-4] " choice
+
+case "$choice" in
+  1) NEW="$((MAJ+1)).0.0" ;;
+  2) NEW="$MAJ.$((MIN+1)).0" ;;
+  3) NEW="$MAJ.$MIN.$((PAT+1))" ;;
+  4) NEW="$CURRENT" ;;
+  *) red "Pick 1, 2, 3 or 4."; exit 1 ;;
+esac
+
+if [ "$NEW" != "$CURRENT" ]; then
+  # header line
+  sed -i -E "s|^(// @version[[:space:]]+).*|\1$NEW|" "$SCRIPT"
+  # in-script constant, so the settings panel and beats report the same number
+  sed -i -E "s|(const BLOX_SUITE_VERSION = ')[^']*(';)|\1$NEW\2|" "$SCRIPT"
+
+  hdr=$(grep -m1 '^// @version' "$SCRIPT" | awk '{print $3}')
+  con=$(grep -m1 'const BLOX_SUITE_VERSION' "$SCRIPT" | sed -E "s|.*'([^']*)'.*|\1|")
+  if [ "$hdr" != "$NEW" ] || [ "$con" != "$NEW" ]; then
+    red "Version bump failed (header=$hdr constant=$con). Nothing pushed."
+    exit 1
+  fi
+  grn "Bumped $CURRENT -> $NEW"
+else
+  dim "Version left at $CURRENT"
+fi
+
+# ---------- commit message ----------
+read -rp "Commit message (blank = 'v$NEW'): " MSG
+MSG=${MSG:-"v$NEW"}
+
+# ---------- git ----------
+if [ ! -d .git ]; then
+  dim "No git repo here yet, initialising"
+  git init -q
+  git branch -M main
+fi
+
+git add -A
+
+if git diff --cached --quiet; then
+  dim "Nothing to commit."
+else
+  git commit -q -m "$MSG"
+  grn "Committed: $MSG"
+fi
+
+# refuse to push if creds somehow got staged
+if git ls-files --error-unmatch "$CREDS" >/dev/null 2>&1; then
+  red "'$CREDS' is tracked by git. Run:  git rm --cached $CREDS   then try again."
+  exit 1
+fi
+
+PUSH_URL="https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/${REPO}.git"
+
+dim "Pushing to github.com/${REPO}"
+if ! git push -q "$PUSH_URL" main 2>/dev/null; then
+  dim "Push rejected, pulling remote changes first"
+  git pull --rebase -q "$PUSH_URL" main || true
+  git push -q "$PUSH_URL" main
+fi
+
+echo
+grn "Pushed v$NEW"
+echo
+echo "Install / update URL:"
+echo "  https://raw.githubusercontent.com/${REPO}/main/${SCRIPT}"
+echo
+dim "Userscript managers check that URL periodically and will offer the update."
